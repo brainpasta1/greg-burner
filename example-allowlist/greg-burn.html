@@ -1,0 +1,708 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Burn Gregs</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.13.2/ethers.umd.min.js"></script>
+<style>
+  :root { color-scheme: light; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: #ffffff;
+    color: #111317;
+    max-width: 520px;
+    margin: 60px auto;
+    padding: 0 20px 60px;
+  }
+  h1 { font-size: 1.4rem; margin-bottom: 4px; }
+  h2 { font-size: 1rem; margin: 0 0 14px 0; color: #111317; }
+  p.sub { color: #666; margin-top: 0; margin-bottom: 0; }
+
+  .card {
+    background: #f7f7f8;
+    border: 1px solid #e0e0e3;
+    border-radius: 12px;
+    padding: 20px;
+    margin-top: 20px;
+  }
+
+  /* ── Buttons ── */
+  .btn {
+    width: 100%;
+    padding: 13px;
+    border-radius: 8px;
+    border: none;
+    font-size: 0.95rem;
+    font-weight: 600;
+    cursor: pointer;
+    margin-top: 10px;
+    transition: opacity 0.15s, transform 0.1s;
+  }
+  .btn:hover:not(:disabled) { opacity: 0.88; transform: translateY(-1px); }
+  .btn:active { transform: translateY(0); }
+  .btn:disabled { opacity: 0.35; cursor: not-allowed; transform: none; }
+  .btn-primary { background: #2563eb; color: #fff; }
+  .btn-danger  { background: #e2543b; color: #fff; }
+
+  /* ── Wallet / owned ── */
+  .owned { font-size: 0.9rem; color: #555; margin-top: 10px; }
+  .status { font-size: 0.85rem; margin-top: 14px; word-break: break-all; }
+  .status a { color: #5b8def; }
+
+  /* ── Tier cards ── */
+  .tiers { display: flex; flex-direction: column; gap: 10px; margin-top: 16px; }
+
+  .tier-card {
+    background: #fff;
+    border: 2px solid #e0e0e3;
+    border-radius: 10px;
+    padding: 14px 16px;
+    cursor: pointer;
+    transition: border-color 0.15s, background 0.15s;
+    position: relative;
+    text-align: left;
+    width: 100%;
+  }
+  .tier-card:hover:not(.locked) { background: #f5f5f7; }
+  .tier-card.selected { background: #f5f5f7; }
+  .tier-card.locked { opacity: 0.4; cursor: not-allowed; }
+
+  .tier-card .tier-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 4px;
+  }
+  .tier-card .tier-name {
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: #111;
+  }
+  .tier-card .tier-count {
+    font-size: 0.78rem;
+    font-weight: 700;
+    padding: 3px 9px;
+    border-radius: 99px;
+  }
+  .tier-card .tier-desc {
+    font-size: 0.82rem;
+    color: #666;
+    line-height: 1.4;
+  }
+  .tier-card .locked-msg {
+    font-size: 0.75rem;
+    margin-top: 4px;
+    display: none;
+  }
+  .tier-card.locked .locked-msg { display: block; }
+
+  /* per-tier accent colours */
+  .tier-inverse  { --tc: #2563eb; --tbg: #eff6ff; }
+  .tier-bw       { --tc: #7c3aed; --tbg: #f5f3ff; }
+  .tier-color    { --tc: #059669; --tbg: #ecfdf5; }
+  .tier-commish  { --tc: #d97706; --tbg: #fffbeb; }
+
+  .tier-card.selected { border-color: var(--tc); background: var(--tbg); }
+  .tier-card:hover:not(.locked):not(.selected) { border-color: color-mix(in srgb, var(--tc) 40%, #e0e0e3); }
+  .tier-card .tier-name { color: var(--tc); }
+  .tier-card .tier-count { background: var(--tbg); color: var(--tc); border: 1px solid color-mix(in srgb, var(--tc) 30%, transparent); }
+  .tier-card.locked .tier-name { color: #666; }
+  .tier-card .locked-msg { color: var(--tc); opacity: 0.8; }
+
+  /* ── Warning ── */
+  .warn {
+    background: #fffbeb; border: 1px solid #fcd34d;
+    color: #92400e; border-radius: 8px; padding: 12px;
+    font-size: 0.85rem; margin-top: 16px;
+  }
+
+  /* ── Username card ── */
+  .text-input {
+    width: 100%; padding: 12px; border-radius: 8px;
+    border: 1px solid #e0e0e3; background: #fff;
+    color: #111; font-size: 0.95rem; box-sizing: border-box;
+  }
+  .text-input::placeholder { color: #aaa; }
+
+  /* ── Leaderboard ── */
+  .leader-table { width: 100%; border-collapse: collapse; margin-top: 4px; font-size: 0.88rem; }
+  .leader-table th { color: #666; font-weight: 600; text-align: left; padding: 6px 8px; border-bottom: 1px solid #e0e0e3; }
+  .leader-table td { padding: 8px 8px; border-bottom: 1px solid #f0f0f0; color: #111; }
+  .leader-table tr:last-child td { border-bottom: none; }
+  .rank { color: #aaa; font-size: 0.8rem; }
+  .ldr-badge {
+    display: inline-block; padding: 2px 7px; border-radius: 99px;
+    font-size: 0.7rem; font-weight: 700; margin-left: 5px; vertical-align: middle;
+  }
+
+  /* ── Auth modal ── */
+  #authOverlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.4);
+    display: none; align-items: center; justify-content: center;
+    z-index: 999; backdrop-filter: blur(4px);
+  }
+  #authBox {
+    background: #fff; border: 1px solid #e0e0e3;
+    border-radius: 16px; padding: 32px; width: 340px;
+    box-shadow: 0 24px 80px rgba(0,0,0,0.15); position: relative;
+  }
+  #authBox h2 { font-size: 1.3rem; font-weight: 700; color: #111; margin-bottom: 6px; }
+  #authBox p.sub { color: #666; font-size: 0.82rem; margin-bottom: 24px; }
+  .auth-tabs { display: flex; margin-bottom: 22px; border-bottom: 1px solid #e0e0e3; }
+  .auth-tab {
+    flex: 1; background: none; border: none; padding: 10px 0;
+    color: #aaa; font-size: 0.9rem; font-weight: 600;
+    cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px;
+    transition: color 0.15s, border-color 0.15s;
+  }
+  .auth-tab.active { color: #2563eb; border-bottom-color: #2563eb; }
+  .auth-panel { display: none; }
+  .auth-panel.active { display: block; }
+  .auth-input {
+    width: 100%; background: #f7f7f8; border: 1px solid #e0e0e3;
+    border-radius: 8px; color: #111; font-size: 0.95rem;
+    padding: 12px 14px; margin-bottom: 10px; outline: none;
+    transition: border-color 0.15s; box-sizing: border-box;
+  }
+  .auth-input:focus { border-color: #2563eb; }
+  .auth-input::placeholder { color: #aaa; }
+  .auth-submit {
+    width: 100%; background: #2563eb; border: none; border-radius: 8px;
+    color: #fff; font-size: 0.95rem; font-weight: 700; padding: 13px;
+    cursor: pointer; margin-top: 6px; transition: opacity 0.15s, transform 0.1s;
+  }
+  .auth-submit:hover:not(:disabled) { opacity: 0.88; transform: translateY(-1px); }
+  .auth-submit:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+  .auth-error { color: #dc2626; font-size: 0.8rem; margin-top: 8px; min-height: 18px; }
+  /* ── User badge / sign-in button ── */
+  #userBadge {
+    position: fixed; top: 16px; right: 20px;
+    display: flex; align-items: center; gap: 10px; z-index: 100;
+  }
+  #userBadge .uname {
+    color: #111; font-size: 13px; font-weight: 600;
+    font-family: -apple-system, sans-serif;
+  }
+  #userBadge button {
+    background: #fff; border: 1px solid #e0e0e3; color: #555;
+    font-size: 11px; padding: 4px 10px; border-radius: 99px;
+    cursor: pointer; transition: background 0.2s;
+  }
+  #userBadge button:hover { background: #f0f0f0; }
+  /* ── Burn history lookup ── */
+  .lookup-input {
+    width: 100%; padding: 12px; border-radius: 8px;
+    border: 1px solid #e0e0e3; background: #fff;
+    color: #111; font-size: 0.88rem; box-sizing: border-box; font-family: monospace;
+  }
+  .lookup-input::placeholder { color: #aaa; }
+  .lookup-result { margin-top: 16px; font-size: 0.88rem; }
+  .burn-entry {
+    background: #f7f7f8; border: 1px solid #e0e0e3;
+    border-radius: 8px; padding: 10px 12px; margin-bottom: 8px;
+    font-size: 0.82rem; color: #555;
+  }
+  .burn-entry .entry-top { color: #111; font-weight: 600; margin-bottom: 2px; }
+  .burn-entry a { color: #2563eb; text-decoration: none; }
+  .tier-pill {
+    display: inline-block; padding: 2px 8px; border-radius: 99px;
+    font-size: 0.72rem; font-weight: 700; margin-left: 7px; vertical-align: middle;
+  }
+</style>
+</head>
+<body>
+
+<!-- Auth modal -->
+<div id="authOverlay">
+  <div id="authBox">
+    <button id="closeAuthBtn" style="position:absolute;top:14px;right:16px;background:none;border:none;color:#555;font-size:1.2rem;cursor:pointer;line-height:1;" onclick="document.getElementById('authOverlay').style.display='none'">✕</button>
+    <h2>Burn Gregs</h2>
+    <p class="sub">Sign in or create an account for leaderboard access.</p>
+    <div class="auth-tabs">
+      <button class="auth-tab active" data-tab="signin">Sign In</button>
+      <button class="auth-tab" data-tab="create">Create Account</button>
+    </div>
+    <div class="auth-panel active" id="panel-signin">
+      <input class="auth-input" id="siUser" type="text"     placeholder="username"  autocomplete="username" />
+      <input class="auth-input" id="siPass" type="password" placeholder="password"  autocomplete="current-password" />
+      <div class="auth-error" id="siErr"></div>
+      <button class="auth-submit" id="siBtn">Sign In</button>
+    </div>
+    <div class="auth-panel" id="panel-create">
+      <input class="auth-input" id="caUser"  type="text"     placeholder="choose a username"   autocomplete="username" />
+      <input class="auth-input" id="caPass"  type="password" placeholder="choose a password (min 6 chars)"  autocomplete="new-password" />
+      <input class="auth-input" id="caPass2" type="password" placeholder="confirm password"    autocomplete="new-password" />
+      <div class="auth-error" id="caErr"></div>
+      <button class="auth-submit" id="caBtn">Create Account</button>
+    </div>
+  </div>
+</div>
+
+<!-- User badge / sign-in button -->
+<div id="userBadge">
+  <span class="uname" id="badgeName" style="display:none;"></span>
+  <button id="signOutBtn" style="display:none;">sign out</button>
+  <button id="openAuthBtn">sign in</button>
+</div>
+
+<h1>Burn Gregs</h1>
+<p class="sub">Burn your Gregs to unlock an upgrade. Each tier is a separate transaction.</p>
+
+<!-- Wallet + burn -->
+<div class="card">
+  <button id="connectBtn" class="btn btn-primary">Connect Wallet</button>
+  <div id="ownedInfo" class="owned" style="display:none;"></div>
+
+  <div id="burnControls" style="display:none; margin-top:4px;">
+    <div class="tiers" id="tierContainer"></div>
+    <div id="keeperWrap" style="display:none; margin-top:16px; padding:14px; background:#f0f4ff; border:1.5px solid #c7d7f8; border-radius:8px;">
+      <label style="font-weight:700; font-size:0.9rem; color:#2563eb; display:block; margin-bottom:6px;">Which Greg do you want customized?</label>
+      <p style="font-size:0.82rem; color:#555; margin:0 0 10px;">This Greg stays in your wallet. It's the one we'll apply your upgrade art to.</p>
+      <select id="keeperSelect" class="text-input" style="width:100%; max-width:220px;"></select>
+    </div>
+    <button id="approveBtn" class="btn btn-primary" style="display:none; margin-top:16px;">1. Approve Burner Contract</button>
+    <button id="burnBtn"    class="btn btn-danger"  style="display:none; margin-top:10px;">2. Burn Gregs</button>
+  </div>
+
+  <div id="status" class="status"></div>
+</div>
+
+<div class="warn">
+  Burning sends your Gregs to <code>0x000…dEaD</code> permanently and cannot be undone.
+  Your upgrade will be fulfilled by the team after the burn is confirmed.
+</div>
+
+<!-- Username claim (shown after burn) -->
+<div id="usernameCard" class="card" style="display:none;">
+  <h2>Claim Your Leaderboard Spot</h2>
+  <p style="font-size:0.85rem; color:#9a9a9a; margin:0 0 12px;">Pick a username to appear next to your wallet.</p>
+  <input class="text-input" id="usernameInput" type="text" maxlength="32" placeholder="your username (max 32 chars)" />
+  <button class="btn btn-primary" id="claimUsernameBtn" style="margin-top:10px;">Claim Username</button>
+  <div id="usernameStatus" class="status"></div>
+</div>
+
+<!-- Leaderboard -->
+<div class="card">
+  <h2>Leaderboard</h2>
+  <div id="leaderboardContent" style="color:#555; font-size:0.88rem;">Loading...</div>
+</div>
+
+<!-- Burn history lookup -->
+<div class="card">
+  <h2>Check Burn History</h2>
+  <label style="font-size:0.85rem; color:#9a9a9a; display:block; margin-bottom:8px;">Enter any wallet address to see its burn history.</label>
+  <input class="lookup-input" id="lookupAddr" type="text" placeholder="0x…" spellcheck="false" autocomplete="off" />
+  <button class="btn btn-primary" id="lookupBtn" style="margin-top:10px;">Check</button>
+  <div id="lookupResult" class="lookup-result"></div>
+</div>
+
+<script>
+// ── AUTH ─────────────────────────────────────────────────────────────────────
+const ACCOUNTS_KEY = "greg_accounts";
+const SESSION_KEY  = "greg_session";
+function getAccounts() { try { return JSON.parse(localStorage.getItem(ACCOUNTS_KEY)||"{}"); } catch { return {}; } }
+function saveAccounts(a) { localStorage.setItem(ACCOUNTS_KEY, JSON.stringify(a)); }
+function getSession()    { return localStorage.getItem(SESSION_KEY)||null; }
+function setSession(u)   { localStorage.setItem(SESSION_KEY, u); }
+function clearSession()  { localStorage.removeItem(SESSION_KEY); }
+
+async function sha256(str) {
+  const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(str));
+  return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,"0")).join("");
+}
+
+function showApp(username) {
+  document.getElementById("authOverlay").style.display = "none";
+  document.getElementById("badgeName").textContent = username;
+  document.getElementById("badgeName").style.display = "";
+  document.getElementById("signOutBtn").style.display = "";
+  document.getElementById("openAuthBtn").style.display = "none";
+}
+
+// Open modal button
+document.getElementById("openAuthBtn").addEventListener("click", () => {
+  document.getElementById("authOverlay").style.display = "flex";
+});
+
+// Tab switching
+document.querySelectorAll(".auth-tab").forEach(tab => {
+  tab.addEventListener("click", () => {
+    document.querySelectorAll(".auth-tab").forEach(t=>t.classList.remove("active"));
+    document.querySelectorAll(".auth-panel").forEach(p=>p.classList.remove("active"));
+    tab.classList.add("active");
+    document.getElementById("panel-"+tab.dataset.tab).classList.add("active");
+    document.getElementById("siErr").textContent="";
+    document.getElementById("caErr").textContent="";
+  });
+});
+
+// Sign in
+async function handleSignIn() {
+  const user = document.getElementById("siUser").value.trim();
+  const pass = document.getElementById("siPass").value;
+  const err  = document.getElementById("siErr");
+  const btn  = document.getElementById("siBtn");
+  if (!user||!pass) { err.textContent="Enter your username and password."; return; }
+  const accounts = getAccounts();
+  if (!accounts[user]) { err.textContent="No account found with that username."; return; }
+  btn.disabled=true;
+  const hash = await sha256(pass);
+  if (hash !== accounts[user]) { err.textContent="Incorrect password."; btn.disabled=false; return; }
+  setSession(user); showApp(user);
+}
+document.getElementById("siBtn").addEventListener("click", handleSignIn);
+document.getElementById("siPass").addEventListener("keydown", e=>{ if(e.key==="Enter") handleSignIn(); });
+
+// Create account
+async function handleCreate() {
+  const user  = document.getElementById("caUser").value.trim().replace(/[^\w\-. ]/g,"").slice(0,32);
+  const pass  = document.getElementById("caPass").value;
+  const pass2 = document.getElementById("caPass2").value;
+  const err   = document.getElementById("caErr");
+  const btn   = document.getElementById("caBtn");
+  if (!user)          { err.textContent="Choose a username."; return; }
+  if (pass.length<6)  { err.textContent="Password must be at least 6 characters."; return; }
+  if (pass!==pass2)   { err.textContent="Passwords don't match."; return; }
+  const accounts = getAccounts();
+  if (accounts[user]) { err.textContent="That username is taken."; return; }
+  btn.disabled=true;
+  const hash = await sha256(pass);
+  accounts[user]=hash; saveAccounts(accounts); setSession(user); showApp(user);
+}
+document.getElementById("caBtn").addEventListener("click", handleCreate);
+document.getElementById("caPass2").addEventListener("keydown", e=>{ if(e.key==="Enter") handleCreate(); });
+
+// Sign out
+document.getElementById("signOutBtn").addEventListener("click", () => {
+  clearSession();
+  document.getElementById("siUser").value="";
+  document.getElementById("siPass").value="";
+  document.getElementById("siErr").textContent="";
+  document.getElementById("badgeName").style.display="none";
+  document.getElementById("signOutBtn").style.display="none";
+  document.getElementById("openAuthBtn").style.display="";
+  document.querySelectorAll(".auth-tab").forEach(t=>t.classList.toggle("active",t.dataset.tab==="signin"));
+  document.querySelectorAll(".auth-panel").forEach(p=>p.classList.toggle("active",p.id==="panel-signin"));
+});
+
+// Auto-login
+const _existing = getSession();
+if (_existing && getAccounts()[_existing]) { showApp(_existing); }
+// ─────────────────────────────────────────────────────────────────────────────
+
+// ── CONFIG ──────────────────────────────────────────────────────────────────
+const GREG_CONTRACT_ADDRESS   = "0x49eb3fd275b862de2c40682ef80b63e473c4b2ad";
+const BURNER_CONTRACT_ADDRESS = "0x955edd15370414A647818205d8e88E6C5fc6E3F8";
+const ALCHEMY_API_KEY         = "3-gtVfH3ffFMUF-6izH4J";
+const DASHBOARD_URL           = "https://greg-burner1-production.up.railway.app";
+const CHAIN_ID                = 1;
+// ────────────────────────────────────────────────────────────────────────────
+
+const TIERS = [
+  {
+    amount: 10,
+    name:   "Inverse Greg",
+    desc:   "Your existing Greg with all colors inverted — a mirror-world edition.",
+    cls:    "tier-inverse",
+  },
+  {
+    amount: 25,
+    name:   "B/W Custom Greg",
+    desc:   "A fully custom black & white Greg built to your specifications.",
+    cls:    "tier-bw",
+  },
+  {
+    amount: 50,
+    name:   "Colored Custom Greg",
+    desc:   "A fully custom full-color Greg designed to your exact specs.",
+    cls:    "tier-color",
+  },
+];
+
+function tierForCount(n) {
+  if (n >= 50)  return TIERS[2];
+  if (n >= 25)  return TIERS[1];
+  if (n >= 10)  return TIERS[0];
+  return null;
+}
+
+const ERC721_ABI = [
+  "function isApprovedForAll(address owner, address operator) view returns (bool)",
+  "function setApprovalForAll(address operator, bool approved)"
+];
+const BURNER_ABI = ["function burnMany(uint256[] tokenIds)"];
+const BURNER_ABI_RO = ["event GregsBurned(address indexed burner, uint256[] tokenIds, uint256 timestamp)"];
+
+let provider, signer, userAddress;
+let ownedTokenIds = [];
+let selectedTier  = null;
+
+const connectBtn   = document.getElementById("connectBtn");
+const ownedInfo    = document.getElementById("ownedInfo");
+const burnControls = document.getElementById("burnControls");
+const approveBtn   = document.getElementById("approveBtn");
+const burnBtn      = document.getElementById("burnBtn");
+const statusEl     = document.getElementById("status");
+const tierContainer= document.getElementById("tierContainer");
+
+function setStatus(html) { statusEl.innerHTML = html; }
+
+// ── Build tier cards ──
+function buildTierCards() {
+  tierContainer.innerHTML = "";
+  TIERS.forEach(tier => {
+    const card = document.createElement("button");
+    card.className = `tier-card ${tier.cls}`;
+    card.dataset.amount = tier.amount;
+    card.innerHTML = `
+      <div class="tier-header">
+        <span class="tier-name">${tier.name}</span>
+        <span class="tier-count">Burn ${tier.amount}</span>
+      </div>
+      <div class="tier-desc">${tier.desc}</div>
+      <div class="locked-msg">You need ${tier.amount + 1} Gregs to unlock this (${tier.amount} to burn + 1 to keep).</div>`;
+    card.addEventListener("click", () => {
+      if (card.classList.contains("locked")) return;
+      document.querySelectorAll(".tier-card").forEach(c => c.classList.remove("selected"));
+      card.classList.add("selected");
+      selectedTier = tier;
+      populateKeeperSelect();
+      refreshBurnBtn();
+    });
+    tierContainer.appendChild(card);
+  });
+}
+
+function refreshTierCards() {
+  document.querySelectorAll(".tier-card").forEach(card => {
+    const amount = Number(card.dataset.amount);
+    const locked = ownedTokenIds.length < amount + 1; // need amount to burn + 1 keeper
+    card.classList.toggle("locked", locked);
+    if (locked && card.classList.contains("selected")) {
+      card.classList.remove("selected");
+      selectedTier = null;
+    }
+  });
+  // Auto-select highest affordable tier if nothing selected
+  if (!selectedTier) {
+    const affordable = TIERS.filter(t => ownedTokenIds.length >= t.amount + 1);
+    if (affordable.length > 0) {
+      const best = affordable[affordable.length - 1];
+      const card = tierContainer.querySelector(`[data-amount="${best.amount}"]`);
+      if (card) { card.classList.add("selected"); selectedTier = best; }
+    }
+  }
+  populateKeeperSelect();
+  refreshBurnBtn();
+}
+
+function populateKeeperSelect() {
+  const wrap = document.getElementById("keeperWrap");
+  const sel  = document.getElementById("keeperSelect");
+  if (!selectedTier || ownedTokenIds.length < selectedTier.amount + 1) {
+    wrap.style.display = "none"; return;
+  }
+  wrap.style.display = "block";
+  sel.innerHTML = ownedTokenIds.map(id => `<option value="${id}">#${id}</option>`).join("");
+}
+
+function refreshBurnBtn() {
+  if (!selectedTier) {
+    burnBtn.textContent = "2. Burn Gregs";
+    burnBtn.style.display = "none";
+    return;
+  }
+  burnBtn.textContent = `2. Burn ${selectedTier.amount} Gregs → ${selectedTier.name}`;
+}
+
+// ── Wallet ──
+connectBtn.addEventListener("click", connectWallet);
+
+async function connectWallet() {
+  if (!window.ethereum) { setStatus("No wallet found. Install MetaMask or another browser wallet."); return; }
+  provider = new ethers.BrowserProvider(window.ethereum);
+  await provider.send("eth_requestAccounts", []);
+  signer = await provider.getSigner();
+  userAddress = await signer.getAddress();
+  const network = await provider.getNetwork();
+  if (Number(network.chainId) !== CHAIN_ID) { setStatus("Please switch your wallet to Ethereum Mainnet."); return; }
+  connectBtn.textContent = userAddress.slice(0, 6) + "…" + userAddress.slice(-4);
+  connectBtn.disabled = true;
+  await loadOwnedGregs();
+}
+
+async function loadOwnedGregs() {
+  setStatus("Loading your Gregs…");
+  const url = `https://eth-mainnet.g.alchemy.com/nft/v3/${ALCHEMY_API_KEY}/getNFTsForOwner?owner=${userAddress}&contractAddresses[]=${GREG_CONTRACT_ADDRESS}&withMetadata=false&pageSize=100`;
+  try {
+    const res  = await fetch(url);
+    const data = await res.json();
+    ownedTokenIds = (data.ownedNfts || []).map(n => Number(n.tokenId));
+  } catch (e) {
+    setStatus("Couldn't load your Gregs. " + e.message); return;
+  }
+  ownedInfo.style.display = "block";
+  ownedInfo.textContent = `You own ${ownedTokenIds.length} Greg${ownedTokenIds.length === 1 ? "" : "s"}.`;
+  if (ownedTokenIds.length === 0) { setStatus("No Gregs found in this wallet."); return; }
+  setStatus("");
+  buildTierCards();
+  refreshTierCards();
+  burnControls.style.display = "block";
+  await refreshApprovalState();
+}
+
+async function refreshApprovalState() {
+  const greg     = new ethers.Contract(GREG_CONTRACT_ADDRESS, ERC721_ABI, provider);
+  const approved = await greg.isApprovedForAll(userAddress, BURNER_CONTRACT_ADDRESS);
+  approveBtn.style.display = approved ? "none" : "block";
+  burnBtn.style.display    = (approved && selectedTier) ? "block" : "none";
+  refreshBurnBtn();
+}
+
+approveBtn.addEventListener("click", async () => {
+  try {
+    setStatus("Requesting approval in your wallet…");
+    const greg = new ethers.Contract(GREG_CONTRACT_ADDRESS, ERC721_ABI, signer);
+    const tx   = await greg.setApprovalForAll(BURNER_CONTRACT_ADDRESS, true);
+    setStatus(`Approval sent: <a href="https://etherscan.io/tx/${tx.hash}" target="_blank">${tx.hash}</a>`);
+    await tx.wait();
+    setStatus("Approved! You can now burn.");
+    await refreshApprovalState();
+  } catch (e) { setStatus("Approval failed: " + (e.shortMessage || e.message)); }
+});
+
+burnBtn.addEventListener("click", async () => {
+  if (!selectedTier) { setStatus("Select a tier first."); return; }
+  if (ownedTokenIds.length < selectedTier.amount + 1) {
+    setStatus(`You need ${selectedTier.amount + 1} Gregs for this tier (${selectedTier.amount} to burn + 1 to keep) — you have ${ownedTokenIds.length}.`); return;
+  }
+  const keeperId = Number(document.getElementById("keeperSelect").value);
+  const burnIds  = ownedTokenIds.filter(id => id !== keeperId).slice(0, selectedTier.amount);
+  if (burnIds.length < selectedTier.amount) {
+    setStatus("Not enough Gregs to burn after reserving your keeper."); return;
+  }
+  const confirmed = confirm(
+    `This will permanently burn ${selectedTier.amount} Greg(s) to unlock:\n"${selectedTier.name}"\n\nBurning: ${burnIds.join(", ")}\nKeeping (to be customized): #${keeperId}\n\nThis cannot be undone. Continue?`
+  );
+  if (!confirmed) return;
+  try {
+    setStatus("Sending burn transaction…");
+    const burner = new ethers.Contract(BURNER_CONTRACT_ADDRESS, BURNER_ABI, signer);
+    const tx     = await burner.burnMany(burnIds);
+    setStatus(`Burn sent: <a href="https://etherscan.io/tx/${tx.hash}" target="_blank">${tx.hash}</a>`);
+    await tx.wait();
+    window._lastKeeperGreg = keeperId;
+    window._lastBurnTx     = tx.hash;
+    setStatus(`✓ Burned ${selectedTier.amount} Greg(s) for <strong>${selectedTier.name}</strong>. Greg #${keeperId} is your keeper — the team will apply your upgrade to it.`);
+    if (DASHBOARD_URL && !DASHBOARD_URL.includes("PASTE")) {
+      document.getElementById("usernameCard").style.display = "block";
+      document.getElementById("usernameCard").scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+    loadLeaderboard();
+    ownedTokenIds = ownedTokenIds.filter(id => !burnIds.includes(id));
+    ownedInfo.textContent = `You own ${ownedTokenIds.length} Greg${ownedTokenIds.length === 1 ? "" : "s"}.`;
+    selectedTier = null;
+    document.getElementById("keeperWrap").style.display = "none";
+    refreshTierCards();
+    if (ownedTokenIds.length === 0) burnControls.style.display = "none";
+  } catch (e) { setStatus("Burn failed: " + (e.shortMessage || e.message)); }
+});
+
+// ── Leaderboard ──
+function tierBadgeHtml(n) {
+  const t = tierForCount(n);
+  if (!t) return "";
+  const styles = {
+    "tier-inverse": "background:#0f1a30;color:#5b8def",
+    "tier-bw":      "background:#1a1030;color:#a78bfa",
+    "tier-color":   "background:#0f2a1a;color:#4caf80",
+    "tier-commish": "background:#2a1e0a;color:#e2a63b",
+  };
+  return `<span class="ldr-badge" style="${styles[t.cls]}">${t.name}</span>`;
+}
+
+async function loadLeaderboard() {
+  const el = document.getElementById("leaderboardContent");
+  if (!DASHBOARD_URL || DASHBOARD_URL.includes("PASTE")) {
+    el.innerHTML = `<span style="color:#555;">Configure DASHBOARD_URL to enable the leaderboard.</span>`; return;
+  }
+  try {
+    const res   = await fetch(`${DASHBOARD_URL}/api/leaderboard`);
+    const board = await res.json();
+    if (!board.length) { el.innerHTML = `<span style="color:#555;">No burns yet — be the first.</span>`; return; }
+    const rows = board.map((e, i) => {
+      const name = e.username ? `<strong>${e.username}</strong>` : `<span style="color:#555;">—</span>`;
+      const addr = `<a href="https://etherscan.io/address/${e.address}" target="_blank" style="color:#5b8def;">${e.address.slice(0,6)}…${e.address.slice(-4)}</a>`;
+      return `<tr>
+        <td class="rank">#${i+1}</td>
+        <td>${name}${tierBadgeHtml(e.total)}</td>
+        <td>${addr}</td>
+        <td>${e.total}</td>
+      </tr>`;
+    }).join("");
+    el.innerHTML = `<table class="leader-table">
+      <tr><th></th><th>Username</th><th>Wallet</th><th>Burned</th></tr>${rows}</table>`;
+  } catch { el.innerHTML = `<span style="color:#555;">Couldn't load leaderboard.</span>`; }
+}
+
+loadLeaderboard();
+setInterval(loadLeaderboard, 60000);
+
+// ── Username claim ──
+document.getElementById("claimUsernameBtn").addEventListener("click", async () => {
+  const btn  = document.getElementById("claimUsernameBtn");
+  const stEl = document.getElementById("usernameStatus");
+  if (!userAddress) { stEl.innerHTML = "No wallet — burn first."; return; }
+  if (!DASHBOARD_URL || DASHBOARD_URL.includes("PASTE")) { stEl.innerHTML = "DASHBOARD_URL not configured."; return; }
+  const raw = document.getElementById("usernameInput").value.trim().replace(/[^\w\-. ]/g,"").slice(0,32);
+  if (!raw) { stEl.innerHTML = "Enter a username first."; return; }
+  try {
+    btn.disabled = true; stEl.innerHTML = "Registering…";
+    const res  = await fetch(`${DASHBOARD_URL}/api/register`, {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({ address: userAddress, username: raw, keeperGreg: window._lastKeeperGreg || null })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Registration failed");
+    stEl.innerHTML = `<span style="color:#4caf80;">✓ You're on the leaderboard as <strong>${data.username}</strong>.</span>`;
+    document.getElementById("usernameInput").disabled = true;
+    loadLeaderboard();
+  } catch (e) { btn.disabled = false; stEl.innerHTML = `<span style="color:#e2543b;">Failed: ${e.message}</span>`; }
+});
+
+// ── Burn history lookup ──
+document.getElementById("lookupBtn").addEventListener("click", lookupBurns);
+document.getElementById("lookupAddr").addEventListener("keydown", e => { if (e.key === "Enter") lookupBurns(); });
+
+async function lookupBurns() {
+  const resultEl = document.getElementById("lookupResult");
+  const raw = document.getElementById("lookupAddr").value.trim();
+  if (!raw) return;
+  let addr;
+  try { addr = ethers.getAddress(raw); }
+  catch { resultEl.innerHTML = `<span style="color:#e2543b;">Invalid address.</span>`; return; }
+  resultEl.innerHTML = `<span style="color:#9a9a9a;">Searching on-chain…</span>`;
+  try {
+    const rp  = new ethers.JsonRpcProvider(`https://eth-mainnet.g.alchemy.com/v2/${ALCHEMY_API_KEY}`);
+    const ctr = new ethers.Contract(BURNER_CONTRACT_ADDRESS, BURNER_ABI_RO, rp);
+    const evs = await ctr.queryFilter(ctr.filters.GregsBurned(addr), 0, "latest");
+    if (!evs.length) { resultEl.innerHTML = `<div style="color:#9a9a9a;">No burns found for this address.</div>`; return; }
+    const total = evs.reduce((s, ev) => s + ev.args.tokenIds.length, 0);
+    const rows  = evs.slice().sort((a,b) => b.blockNumber - a.blockNumber).map(ev => {
+      const ids  = ev.args.tokenIds.map(id => Number(id));
+      const date = new Date(Number(ev.args.timestamp) * 1000).toLocaleString();
+      const t    = tierForCount(ids.length);
+      const pill = t ? `<span class="tier-pill" style="background:${t.cls === 'tier-inverse'?'#0f1a30':t.cls==='tier-bw'?'#1a1030':t.cls==='tier-color'?'#0f2a1a':'#2a1e0a'};color:${t.cls==='tier-inverse'?'#5b8def':t.cls==='tier-bw'?'#a78bfa':t.cls==='tier-color'?'#4caf80':'#e2a63b'}">${t.name}</span>` : "";
+      return `<div class="burn-entry">
+        <div class="entry-top">${ids.length} Greg${ids.length===1?'':'s'} burned ${pill}</div>
+        <div>Token IDs: ${ids.join(", ")}</div>
+        <div style="margin-top:4px;">${date} · <a href="https://etherscan.io/tx/${ev.transactionHash}" target="_blank">view tx ↗</a></div>
+      </div>`;
+    }).join("");
+    resultEl.innerHTML = `<div style="font-weight:700;color:#4caf80;margin-bottom:10px;">${total} Greg${total===1?'':'s'} burned total</div>${rows}`;
+  } catch (e) { resultEl.innerHTML = `<span style="color:#e2543b;">Lookup failed: ${e.shortMessage||e.message}</span>`; }
+}
+</script>
+</body>
+</html>
