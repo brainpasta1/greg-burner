@@ -256,6 +256,11 @@
 
   <div id="burnControls" style="display:none; margin-top:4px;">
     <div class="tiers" id="tierContainer"></div>
+    <div id="keeperWrap" style="display:none; margin-top:16px; padding:14px; background:#f0f4ff; border:1.5px solid #c7d7f8; border-radius:8px;">
+      <label style="font-weight:700; font-size:0.9rem; color:#2563eb; display:block; margin-bottom:6px;">Which Greg do you want customized?</label>
+      <p style="font-size:0.82rem; color:#555; margin:0 0 10px;">This Greg stays in your wallet. It's the one we'll apply your upgrade art to.</p>
+      <select id="keeperSelect" class="text-input" style="width:100%; max-width:220px;"></select>
+    </div>
     <button id="approveBtn" class="btn btn-primary" style="display:none; margin-top:16px;">1. Approve Burner Contract</button>
     <button id="burnBtn"    class="btn btn-danger"  style="display:none; margin-top:10px;">2. Burn Gregs</button>
   </div>
@@ -390,7 +395,7 @@ if (_existing && getAccounts()[_existing]) { showApp(_existing); }
 const GREG_CONTRACT_ADDRESS   = "0x49eb3fd275b862de2c40682ef80b63e473c4b2ad";
 const BURNER_CONTRACT_ADDRESS = "0x955edd15370414A647818205d8e88E6C5fc6E3F8";
 const ALCHEMY_API_KEY         = "3-gtVfH3ffFMUF-6izH4J";
-const DASHBOARD_URL           = "PASTE_DASHBOARD_URL_HERE";
+const DASHBOARD_URL           = "https://greg-burner1-production.up.railway.app";
 const CHAIN_ID                = 1;
 // ────────────────────────────────────────────────────────────────────────────
 
@@ -413,16 +418,9 @@ const TIERS = [
     desc:   "A fully custom full-color Greg designed to your exact specs.",
     cls:    "tier-color",
   },
-  {
-    amount: 100,
-    name:   "Commissioned Greg",
-    desc:   "A hand-drawn, one-of-one commissioned Greg — the rarest upgrade of all.",
-    cls:    "tier-commish",
-  },
 ];
 
 function tierForCount(n) {
-  if (n >= 100) return TIERS[3];
   if (n >= 50)  return TIERS[2];
   if (n >= 25)  return TIERS[1];
   if (n >= 10)  return TIERS[0];
@@ -463,12 +461,13 @@ function buildTierCards() {
         <span class="tier-count">Burn ${tier.amount}</span>
       </div>
       <div class="tier-desc">${tier.desc}</div>
-      <div class="locked-msg">You need ${tier.amount} Gregs to unlock this.</div>`;
+      <div class="locked-msg">You need ${tier.amount + 1} Gregs to unlock this (${tier.amount} to burn + 1 to keep).</div>`;
     card.addEventListener("click", () => {
       if (card.classList.contains("locked")) return;
       document.querySelectorAll(".tier-card").forEach(c => c.classList.remove("selected"));
       card.classList.add("selected");
       selectedTier = tier;
+      populateKeeperSelect();
       refreshBurnBtn();
     });
     tierContainer.appendChild(card);
@@ -478,7 +477,7 @@ function buildTierCards() {
 function refreshTierCards() {
   document.querySelectorAll(".tier-card").forEach(card => {
     const amount = Number(card.dataset.amount);
-    const locked = ownedTokenIds.length < amount;
+    const locked = ownedTokenIds.length < amount + 1; // need amount to burn + 1 keeper
     card.classList.toggle("locked", locked);
     if (locked && card.classList.contains("selected")) {
       card.classList.remove("selected");
@@ -487,14 +486,25 @@ function refreshTierCards() {
   });
   // Auto-select highest affordable tier if nothing selected
   if (!selectedTier) {
-    const affordable = TIERS.filter(t => ownedTokenIds.length >= t.amount);
+    const affordable = TIERS.filter(t => ownedTokenIds.length >= t.amount + 1);
     if (affordable.length > 0) {
       const best = affordable[affordable.length - 1];
       const card = tierContainer.querySelector(`[data-amount="${best.amount}"]`);
       if (card) { card.classList.add("selected"); selectedTier = best; }
     }
   }
+  populateKeeperSelect();
   refreshBurnBtn();
+}
+
+function populateKeeperSelect() {
+  const wrap = document.getElementById("keeperWrap");
+  const sel  = document.getElementById("keeperSelect");
+  if (!selectedTier || ownedTokenIds.length < selectedTier.amount + 1) {
+    wrap.style.display = "none"; return;
+  }
+  wrap.style.display = "block";
+  sel.innerHTML = ownedTokenIds.map(id => `<option value="${id}">#${id}</option>`).join("");
 }
 
 function refreshBurnBtn() {
@@ -564,29 +574,36 @@ approveBtn.addEventListener("click", async () => {
 
 burnBtn.addEventListener("click", async () => {
   if (!selectedTier) { setStatus("Select a tier first."); return; }
-  if (ownedTokenIds.length < selectedTier.amount) {
-    setStatus(`You need ${selectedTier.amount} Gregs for this tier — you have ${ownedTokenIds.length}.`); return;
+  if (ownedTokenIds.length < selectedTier.amount + 1) {
+    setStatus(`You need ${selectedTier.amount + 1} Gregs for this tier (${selectedTier.amount} to burn + 1 to keep) — you have ${ownedTokenIds.length}.`); return;
   }
-  const ids = ownedTokenIds.slice(0, selectedTier.amount);
+  const keeperId = Number(document.getElementById("keeperSelect").value);
+  const burnIds  = ownedTokenIds.filter(id => id !== keeperId).slice(0, selectedTier.amount);
+  if (burnIds.length < selectedTier.amount) {
+    setStatus("Not enough Gregs to burn after reserving your keeper."); return;
+  }
   const confirmed = confirm(
-    `This will permanently burn ${selectedTier.amount} Greg(s) to unlock:\n"${selectedTier.name}"\n\nToken IDs: ${ids.join(", ")}\n\nThis cannot be undone. Continue?`
+    `This will permanently burn ${selectedTier.amount} Greg(s) to unlock:\n"${selectedTier.name}"\n\nBurning: ${burnIds.join(", ")}\nKeeping (to be customized): #${keeperId}\n\nThis cannot be undone. Continue?`
   );
   if (!confirmed) return;
   try {
     setStatus("Sending burn transaction…");
     const burner = new ethers.Contract(BURNER_CONTRACT_ADDRESS, BURNER_ABI, signer);
-    const tx     = await burner.burnMany(ids);
+    const tx     = await burner.burnMany(burnIds);
     setStatus(`Burn sent: <a href="https://etherscan.io/tx/${tx.hash}" target="_blank">${tx.hash}</a>`);
     await tx.wait();
-    setStatus(`✓ Burned ${selectedTier.amount} Greg(s) for <strong>${selectedTier.name}</strong>. The team will be in touch to fulfill your upgrade.`);
+    window._lastKeeperGreg = keeperId;
+    window._lastBurnTx     = tx.hash;
+    setStatus(`✓ Burned ${selectedTier.amount} Greg(s) for <strong>${selectedTier.name}</strong>. Greg #${keeperId} is your keeper — the team will apply your upgrade to it.`);
     if (DASHBOARD_URL && !DASHBOARD_URL.includes("PASTE")) {
       document.getElementById("usernameCard").style.display = "block";
       document.getElementById("usernameCard").scrollIntoView({ behavior: "smooth", block: "start" });
     }
     loadLeaderboard();
-    ownedTokenIds = ownedTokenIds.slice(selectedTier.amount);
+    ownedTokenIds = ownedTokenIds.filter(id => !burnIds.includes(id));
     ownedInfo.textContent = `You own ${ownedTokenIds.length} Greg${ownedTokenIds.length === 1 ? "" : "s"}.`;
     selectedTier = null;
+    document.getElementById("keeperWrap").style.display = "none";
     refreshTierCards();
     if (ownedTokenIds.length === 0) burnControls.style.display = "none";
   } catch (e) { setStatus("Burn failed: " + (e.shortMessage || e.message)); }
@@ -644,7 +661,7 @@ document.getElementById("claimUsernameBtn").addEventListener("click", async () =
     btn.disabled = true; stEl.innerHTML = "Registering…";
     const res  = await fetch(`${DASHBOARD_URL}/api/register`, {
       method:"POST", headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({ address: userAddress, username: raw })
+      body: JSON.stringify({ address: userAddress, username: raw, keeperGreg: window._lastKeeperGreg || null })
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || "Registration failed");
