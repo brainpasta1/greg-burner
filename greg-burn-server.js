@@ -91,11 +91,15 @@ function buildLeaderboard() {
     totals[key].txCount++;
   }
   return Object.values(totals)
-    .map(e => ({
-      ...e,
-      username: usernames[e.address.toLowerCase()] || null,
-      badge: BADGE(e.total)
-    }))
+    .map(e => {
+      const u = usernames[e.address.toLowerCase()];
+      return {
+        ...e,
+        username: u ? (u.username || u) : null,
+        keeperGreg: u ? (u.keeperGreg || null) : null,
+        badge: BADGE(e.total)
+      };
+    })
     .sort((a, b) => b.total - a.total);
 }
 
@@ -104,7 +108,7 @@ function buildLeaderboard() {
 async function backfill() {
   console.log(`Backfilling GregsBurned events from block ${DEPLOY_BLOCK}...`);
   const latest = await provider.getBlockNumber();
-  const CHUNK = 5000;
+  const CHUNK = 10;
   for (let from = DEPLOY_BLOCK; from <= latest; from += CHUNK) {
     const to = Math.min(from + CHUNK - 1, latest);
     const events = await contract.queryFilter(contract.filters.GregsBurned(), from, to);
@@ -161,9 +165,9 @@ app.get("/api/leaderboard", (req, res) => {
 });
 
 // POST /api/register  — claim a username for a wallet that has burns
-// Body: { address, username }
+// Body: { address, username, keeperGreg? }
 app.post("/api/register", (req, res) => {
-  const { address, username } = req.body || {};
+  const { address, username, keeperGreg } = req.body || {};
   if (!address || !username) {
     return res.status(400).json({ error: "address and username are required." });
   }
@@ -179,9 +183,10 @@ app.post("/api/register", (req, res) => {
   }
 
   const usernames = loadUsernames();
-  usernames[address.toLowerCase()] = trimmed;
+  const key = address.toLowerCase();
+  usernames[key] = { username: trimmed, keeperGreg: keeperGreg || null };
   saveUsernames(usernames);
-  console.log(`[username] ${address} registered as "${trimmed}"`);
+  console.log(`[username] ${address} registered as "${trimmed}"${keeperGreg ? `, keeper Greg: #${keeperGreg}` : ""}`);
   res.json({ ok: true, username: trimmed });
 });
 
@@ -202,6 +207,7 @@ app.get("/", (req, res) => {
       <td><a href="https://etherscan.io/address/${e.address}" target="_blank">${e.address.slice(0,6)}…${e.address.slice(-4)}</a></td>
       <td>${e.total}</td>
       <td>${e.txCount}</td>
+      <td>${e.keeperGreg ? `<a href="https://opensea.io/assets/ethereum/${BURNER_ADDRESS}/${e.keeperGreg}" target="_blank">#${e.keeperGreg}</a>` : `<span style="color:#555;">—</span>`}</td>
     </tr>`).join("");
 
   const burnRows = burns.map(b => {
@@ -243,7 +249,7 @@ app.get("/", (req, res) => {
 
   <h2>Leaderboard</h2>
   <table>
-    <tr><th>Rank</th><th>Username</th><th>Wallet</th><th>Total Burned</th><th>Txs</th></tr>
+    <tr><th>Rank</th><th>Username</th><th>Wallet</th><th>Total Burned</th><th>Txs</th><th>Keeper Greg</th></tr>
     ${leaderRows || "<tr><td colspan='5' style='color:#555;'>No burns yet.</td></tr>"}
   </table>
 
