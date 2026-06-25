@@ -262,8 +262,6 @@ app.get("/", (req, res) => {
 </html>`);
 });
 
-backfill()
-  .then(listenLive)
-  .catch(err => console.error("Startup error:", err));
+backfill().then(listenLive);
 
 app.listen(PORT, () => console.log(`Dashboard running on http://localhost:${PORT}`));
