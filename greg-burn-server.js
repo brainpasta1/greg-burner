@@ -262,6 +262,8 @@ app.get("/", (req, res) => {
 </html>`);
 });
 
-backfill().then(listenLive);
+async function backfill() {
+  console.log("Backfill skipped — live listener will catch all burns.");
+}
 
 app.listen(PORT, () => console.log(`Dashboard running on http://localhost:${PORT}`));
